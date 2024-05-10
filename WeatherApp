@@ -1,0 +1,79 @@
+import requests
+import json
+import threading
+
+class WeatherApp:
+    def __init__(self):
+        self.api_key = "89df9e01aaf466ee40550f3f84852474"
+        self.base_url = "http://api.openweathermap.org/data/2.5/weather?"
+        
+    def get_weather(self, city):
+        try:
+            complete_url = f"{self.base_url}q={city}&appid={self.api_key}"
+            response = requests.get(complete_url)
+            data = response.json()
+            temperature_celsius = data["main"]["temp"] - 273.15
+            weather_data = {
+                "city": city,
+                "temperature": temperature_celsius,
+                "conditions": data["weather"][0]["description"]
+            }
+            return weather_data
+        except Exception as e:
+            print("An error occurred:", e)
+            return None
+
+def save_to_file(weather_data):
+    with open("weather_data.txt", "a") as file:
+        file.write(json.dumps(weather_data) + "\n")
+
+def load_from_file():
+    try:
+        with open("weather_data.txt", "r") as file:
+            for line in file:
+                yield json.loads(line.strip())
+    except FileNotFoundError:
+        print("No weather data found.")
+
+def weather_generator(cities):
+    weather_app = WeatherApp()
+    for city in cities:
+        yield weather_app.get_weather(city)
+
+def retry_decorator(func):
+    def wrapper(*args, **kwargs):
+        for _ in range(3):  # Retry up to 3 times
+            try:
+                result = func(*args, **kwargs)
+                return result
+            except Exception as e:
+                print("Retrying due to error:", e)
+        print("Failed after 3 retries.")
+        return None
+    return wrapper
+
+@retry_decorator
+def get_weather_with_retry(weather_app, city):
+    return weather_app.get_weather(city)
+
+def main():
+    cities = ["Mumbai", "Delhi", "Chennai"]
+    
+    # Retrieve weather data for cities and save to file using multithreading
+    threads = []
+    for city in cities:
+        weather_app = WeatherApp()
+        thread = threading.Thread(target=save_to_file, args=(get_weather_with_retry(weather_app, city),))
+        thread.start()
+        threads.append(thread)
+    
+    for thread in threads:
+        thread.join()
+    
+    # Load weather data from file and print
+    print("Weather data from file:")
+    for weather_data in load_from_file():
+        print(weather_data)
+
+if __name__ == "__main__":
+    main()
